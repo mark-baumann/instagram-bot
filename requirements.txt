@@ -1,0 +1,5 @@
+Flask
+instagrapi
+Pillow
+Flask-Session
+redis
