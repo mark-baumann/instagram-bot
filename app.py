@@ -151,13 +151,13 @@ def thread_view(thread_id):
     try:
         cl = get_client()
         
-        # POST: Nachricht absenden
+        # POST: Nachricht im Hintergrund empfangen
         if request.method == "POST":
             text = request.form.get("message")
             if text:
                 cl.direct_send(text, thread_ids=[thread_id])
-            # Redirect sorgt für das Neuladen der Nachrichten
-            return redirect(url_for("thread_view", thread_id=thread_id))
+            # Wir antworten nur mit "OK", damit die Seite nicht neu lädt
+            return {"status": "success"}, 200
 
         # Thread-Details & Nachrichten laden
         thread = cl.direct_thread(thread_id)
@@ -172,14 +172,15 @@ def thread_view(thread_id):
         <head>
             <meta charset="utf-8">
             <title>Chat</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
         </head>
-        <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; background: #f0f2f5;">
+        <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; background: #f0f2f5; padding: 10px;">
           <a href="{{ url_for('threads') }}" style="text-decoration: none; color: #666; font-weight: bold;">← Zurück</a>
           <h3>Chat mit {{ title }}</h3>
           
           <div id="chat-window" style="background: white; padding: 15px; border: 1px solid #ddd; height: 500px; overflow-y: scroll; display: flex; flex-direction: column; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
             {% for m in msgs %}
-              <div style="margin-bottom: 15px; max-width: 85%; {{ 'align-self: flex-end; text-align: right;' if m.user_id|string == my_id|string else 'align-self: flex-start;' }}">
+              <div class="msg-bubble" style="margin-bottom: 15px; max-width: 85%; {{ 'align-self: flex-end; text-align: right;' if m.user_id|string == my_id|string else 'align-self: flex-start;' }}">
                 <small style="color: #999; display: block; margin-bottom: 2px;">
                     {{ user_names.get(m.user_id|string, 'Unbekannt') }} • {{ m.timestamp.strftime('%H:%M') if m.timestamp else '' }}
                 </small> 
@@ -191,18 +192,59 @@ def thread_view(thread_id):
             {% endfor %}
           </div>
 
-          <form method="post" style="margin-top: 20px; display: flex; gap: 10px;">
+          <form id="message-form" style="margin-top: 20px; display: flex; gap: 10px;">
               <input name="message" id="msg-input" placeholder="Nachricht schreiben..." style="flex-grow: 1; padding: 12px; border: 1px solid #ccc; border-radius: 25px; outline: none;" required autocomplete="off">
               <button type="submit" style="padding: 10px 25px; background: #0084ff; color: white; border: none; border-radius: 25px; cursor: pointer; font-weight: bold;">Senden</button>
           </form>
 
           <script>
+            const chatWindow = document.getElementById("chat-window");
+            const messageForm = document.getElementById("message-form");
+            const msgInput = document.getElementById("msg-input");
+
+            // Scrollt nach ganz unten
             function scrollToBottom() {
-                var chatWindow = document.getElementById("chat-window");
                 chatWindow.scrollTop = chatWindow.scrollHeight;
             }
-            // Beim Laden der Seite ausführen
+
+            // Beim ersten Laden nach unten scrollen
             window.onload = scrollToBottom;
+
+            // Nachricht absenden ohne Reload
+            messageForm.onsubmit = async (e) => {
+                e.preventDefault(); // Verhindert den Seiten-Reload!
+                
+                const text = msgInput.value;
+                if(!text) return;
+
+                // 1. Nachricht sofort im UI anzeigen (für Speed-Gefühl)
+                const now = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const newMsg = `
+                    <div style="margin-bottom: 15px; max-width: 85%; align-self: flex-end; text-align: right;">
+                        <small style="color: #999; display: block; margin-bottom: 2px;">Du • ${now}</small> 
+                        <div style="display: inline-block; padding: 10px 14px; border-radius: 18px; background: #0084ff; color: white;">
+                            ${text}
+                        </div>
+                    </div>`;
+                chatWindow.innerHTML += newMsg;
+                scrollToBottom();
+                
+                // Input leeren
+                msgInput.value = "";
+
+                // 2. Nachricht im Hintergrund an den Server senden
+                const formData = new FormData();
+                formData.append('message', text);
+
+                try {
+                    await fetch(window.location.href, {
+                        method: 'POST',
+                        body: formData
+                    });
+                } catch (err) {
+                    alert("Fehler beim Senden!");
+                }
+            };
           </script>
 
         </body></html>
