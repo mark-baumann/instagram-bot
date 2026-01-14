@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import os
-import json
+os importieren
+json importieren
 from datetime import datetime
-from flask import Flask, request, redirect, url_for, session, render_template_string
+from flask import Flask, request, redirect, url_for, session, render_template_string, Response
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired
 
 # -----------------------------
 # Config
 # -----------------------------
-# WICHTIG: Setze in Vercel eine lange FLASK_SECRET Variable!
 APP_SECRET = os.environ.get("FLASK_SECRET", "völlig-geheimes-passwort-123")
 THREADS_PER_PAGE = 30
 MSGS_PER_THREAD = 50
@@ -21,29 +20,17 @@ app.secret_key = APP_SECRET
 # -----------------------------
 # Helpers
 # -----------------------------
-def fmt_dt(dt) -> str:
-    if not dt: return "?"
-    return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
-
 def get_client() -> Client:
-    """
-    Lädt den Client direkt aus den im Flask-Cookie gespeicherten Settings.
-    Es wird keine Datei auf Disk benötigt.
-    """
     cl = Client()
-    
-    # Versuche die Settings aus dem Cookie (Session) zu laden
     ig_settings = session.get("ig_settings")
     if ig_settings:
         cl.set_settings(ig_settings)
     
-    # Falls wir Username/Passwort haben, aber keine Session oder Session abgelaufen
     if not cl.user_id:
         username = session.get("ig_username")
         password = session.get("ig_password")
         if username and password:
             cl.login(username, password)
-            # Nach Login neue Settings im Cookie speichern
             session["ig_settings"] = cl.get_settings()
         else:
             raise LoginRequired("Session abgelaufen oder nicht vorhanden.")
@@ -75,11 +62,10 @@ def login():
         try:
             cl = Client()
             if file and file.filename.endswith(".json"):
-                # Datei im Speicher lesen (nicht auf Disk speichern!)
                 file_content = file.read().decode("utf-8")
                 settings = json.loads(file_content)
                 cl.set_settings(settings)
-                cl.get_timeline_feed() # Test
+                cl.get_timeline_feed() 
                 session["ig_settings"] = settings
                 return redirect(url_for("threads"))
 
@@ -94,20 +80,35 @@ def login():
 
     return render_template_string("""
     <html><head><meta charset="utf-8"><title>Login</title></head>
-    <body style="font-family: sans-serif; max-width: 500px; margin: 50px auto;">
-      <h2>IG DM Login (Vercel Ready)</h2>
-      <form method="post" enctype="multipart/form-data" style="border: 1px solid #ccc; padding: 20px;">
-        <h3>Variante A: session.json</h3>
-        <input type="file" name="session_file" accept=".json"><br><br>
-        <hr>
-        <h3>Variante B: Credentials</h3>
-        <input name="username" placeholder="Username" style="width:100%"><br><br>
-        <input name="password" type="password" placeholder="Password" style="width:100%"><br><br>
-        <button type="submit" style="width:100%; padding: 10px;">Login</button>
-      </form>
-      {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+    <body style="font-family: sans-serif; max-width: 500px; margin: 50px auto; background: #fafafa;">
+      <div style="background: white; border: 1px solid #ddd; padding: 30px; border-radius: 8px;">
+          <h2>IG DM Login</h2>
+          <form method="post" enctype="multipart/form-data">
+            <h3>Variante A: session.json</h3>
+            <input type="file" name="session_file" accept=".json"><br><br>
+            <hr>
+            <h3>Variante B: Credentials</h3>
+            <input name="username" placeholder="Username" style="width:100%; margin-bottom: 10px; padding: 8px;">
+            <input name="password" type="password" placeholder="Password" style="width:100%; margin-bottom: 20px; padding: 8px;">
+            <button type="submit" style="width:100%; padding: 10px; background: #0095f6; color: white; border: none; border-radius: 4px; cursor: pointer;">Login</button>
+          </form>
+          {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+      </div>
     </body></html>
     """, error=error)
+
+@app.route("/download_session")
+def download_session():
+    """Erlaubt den Download der aktuellen Session-Daten als JSON-Datei."""
+    settings = session.get("ig_settings")
+    if not settings:
+        return "Keine Session gefunden. Bitte erst einloggen.", 404
+    
+    return Response(
+        json.dumps(settings, indent=4),
+        mimetype="application/json",
+        headers={"Content-Disposition": "attachment;filename=session.json"}
+    )
 
 @app.route("/logout")
 def logout():
@@ -121,12 +122,17 @@ def threads():
         threads_list = cl.direct_threads(amount=THREADS_PER_PAGE)
         return render_template_string("""
         <html><body style="font-family: sans-serif; max-width: 800px; margin: 40px auto;">
-          <h2>Deine Chats</h2>
-          <a href="{{ url_for('logout') }}">Logout</a><br><br>
-          <ul style="list-style: none; padding: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h2>Deine Chats</h2>
+              <div>
+                  <a href="{{ url_for('download_session') }}" style="background: #34a853; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 14px; margin-right: 10px;">💾 session.json sichern</a>
+                  <a href="{{ url_for('logout') }}" style="color: #666;">Logout</a>
+              </div>
+          </div>
+          <ul style="list-style: none; padding: 0; margin-top: 20px;">
             {% for t in threads %}
-              <li style="padding: 10px; border-bottom: 1px solid #eee;">
-                <a href="{{ url_for('thread_view', thread_id=t.id) }}" style="text-decoration: none; color: #0095f6; font-weight: bold;">
+              <li style="padding: 15px; border-bottom: 1px solid #eee;">
+                <a href="{{ url_for('thread_view', thread_id=t.id) }}" style="text-decoration: none; color: #0095f6; font-weight: bold; font-size: 18px;">
                   {{ titles[t.id] }}
                 </a>
               </li>
@@ -137,28 +143,54 @@ def threads():
     except Exception as e:
         return f"Fehler: {e} <br><a href='/login'>Neu einloggen</a>"
 
-@app.route("/thread/<thread_id>")
+@app.route("/thread/<thread_id>", methods=["GET", "POST"])
 def thread_view(thread_id):
     try:
         cl = get_client()
+        
+        # Nachricht senden
+        if request.method == "POST":
+            text = request.form.get("message")
+            if text:
+                cl.direct_send(text, thread_ids=[thread_id])
+            return redirect(url_for("thread_view", thread_id=thread_id))
+
+        # Thread & Nachrichten laden
+        thread = cl.direct_thread(thread_id)
+        # Erstelle ein Mapping von user_id -> username
+        user_map = {str(u.pk): u.username for u in thread.users}
+        user_map[str(cl.user_id)] = "Du"
+
         msgs = cl.direct_messages(thread_id, amount=MSGS_PER_THREAD) or []
         msgs_sorted = sorted(msgs, key=lambda m: getattr(m, "timestamp", datetime.min))
         
         return render_template_string("""
         <html><body style="font-family: sans-serif; max-width: 800px; margin: 40px auto;">
-          <a href="{{ url_for('threads') }}">← Zurück</a>
-          <h3>Chat</h3>
-          <div style="background: #f9f9f9; padding: 15px; border: 1px solid #ddd;">
+          <a href="{{ url_for('threads') }}" style="text-decoration: none; color: #666;">← Zurück zur Übersicht</a>
+          <h3>Chat mit {{ title }}</h3>
+          
+          <div style="background: #f9f9f9; padding: 15px; border: 1px solid #ddd; height: 400px; overflow-y: scroll; display: flex; flex-direction: column;">
             {% for m in msgs %}
-              <div style="margin-bottom: 10px;">
-                <small style="color: #999;">{{ m.timestamp.strftime('%H:%M') if m.timestamp else '' }}</small> 
-                <strong>{{ 'Du' if m.user_id|string == my_id|string else 'Partner' }}:</strong> 
-                {{ m.text or '[Media]' }}
+              <div style="margin-bottom: 15px; max-width: 80%; {{ 'align-self: flex-end; text-align: right;' if m.user_id|string == my_id|string else 'align-self: flex-start;' }}">
+                <small style="color: #999; display: block;">{{ user_names.get(m.user_id|string, 'Unbekannt') }} • {{ m.timestamp.strftime('%H:%M') if m.timestamp else '' }}</small> 
+                <div style="display: inline-block; padding: 8px 12px; border-radius: 12px; margin-top: 4px; 
+                            {{ 'background: #0095f6; color: white;' if m.user_id|string == my_id|string else 'background: #e4e6eb; color: black;' }}">
+                    {{ m.text or '[Media/Anhang]' }}
+                </div>
               </div>
             {% endfor %}
           </div>
+
+          <form method="post" style="margin-top: 20px; display: flex;">
+              <input name="message" placeholder="Nachricht schreiben..." style="flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px 0 0 4px;" required>
+              <button type="submit" style="padding: 10px 20px; background: #0095f6; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer;">Senden</button>
+          </form>
         </body></html>
-        """, msgs=msgs_sorted, my_id=cl.user_id)
+        """, 
+        msgs=msgs_sorted, 
+        my_id=cl.user_id, 
+        user_names=user_map, 
+        title=thread_title(thread))
     except Exception as e:
         return f"Fehler: {e}"
 
