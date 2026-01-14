@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-os importieren
-json importieren
+import os
+import json
 from datetime import datetime
 from flask import Flask, request, redirect, url_for, session, render_template_string, Response
 from instagrapi import Client
@@ -10,6 +10,7 @@ from instagrapi.exceptions import LoginRequired
 # -----------------------------
 # Config
 # -----------------------------
+# WICHTIG: Setze in Vercel eine lange FLASK_SECRET Variable!
 APP_SECRET = os.environ.get("FLASK_SECRET", "völlig-geheimes-passwort-123")
 THREADS_PER_PAGE = 30
 MSGS_PER_THREAD = 50
@@ -21,6 +22,7 @@ app.secret_key = APP_SECRET
 # Helpers
 # -----------------------------
 def get_client() -> Client:
+    """Lädt den Client aus der Session oder loggt neu ein."""
     cl = Client()
     ig_settings = session.get("ig_settings")
     if ig_settings:
@@ -38,6 +40,7 @@ def get_client() -> Client:
     return cl
 
 def thread_title(thread) -> str:
+    """Erzeugt einen Titel für den Chat (Usernamen der Teilnehmer)."""
     users = getattr(thread, "users", None) or []
     title = ", ".join([getattr(u, "username", "?") for u in users]).strip()
     return title if title else f"(ID: {getattr(thread,'id','?')})"
@@ -84,7 +87,7 @@ def login():
       <div style="background: white; border: 1px solid #ddd; padding: 30px; border-radius: 8px;">
           <h2>IG DM Login</h2>
           <form method="post" enctype="multipart/form-data">
-            <h3>Variante A: session.json</h3>
+            <h3>Variante A: session.json upload</h3>
             <input type="file" name="session_file" accept=".json"><br><br>
             <hr>
             <h3>Variante B: Credentials</h3>
@@ -125,7 +128,7 @@ def threads():
           <div style="display: flex; justify-content: space-between; align-items: center;">
               <h2>Deine Chats</h2>
               <div>
-                  <a href="{{ url_for('download_session') }}" style="background: #34a853; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 14px; margin-right: 10px;">💾 session.json sichern</a>
+                  <a href="{{ url_for('download_session') }}" style="background: #34a853; color: white; padding: 8px 12px; text-decoration: none; border-radius: 4px; font-size: 14px; margin-right: 10px;">💾 session.json herunterladen</a>
                   <a href="{{ url_for('logout') }}" style="color: #666;">Logout</a>
               </div>
           </div>
@@ -148,16 +151,16 @@ def thread_view(thread_id):
     try:
         cl = get_client()
         
-        # Nachricht senden
+        # POST: Nachricht absenden
         if request.method == "POST":
             text = request.form.get("message")
             if text:
                 cl.direct_send(text, thread_ids=[thread_id])
             return redirect(url_for("thread_view", thread_id=thread_id))
 
-        # Thread & Nachrichten laden
+        # Thread-Details & Nachrichten laden
         thread = cl.direct_thread(thread_id)
-        # Erstelle ein Mapping von user_id -> username
+        # Mapping: ID -> Username für die Anzeige im Chat
         user_map = {str(u.pk): u.username for u in thread.users}
         user_map[str(cl.user_id)] = "Du"
 
@@ -166,24 +169,24 @@ def thread_view(thread_id):
         
         return render_template_string("""
         <html><body style="font-family: sans-serif; max-width: 800px; margin: 40px auto;">
-          <a href="{{ url_for('threads') }}" style="text-decoration: none; color: #666;">← Zurück zur Übersicht</a>
+          <a href="{{ url_for('threads') }}" style="text-decoration: none; color: #666;">← Zurück</a>
           <h3>Chat mit {{ title }}</h3>
           
-          <div style="background: #f9f9f9; padding: 15px; border: 1px solid #ddd; height: 400px; overflow-y: scroll; display: flex; flex-direction: column;">
+          <div style="background: #f9f9f9; padding: 15px; border: 1px solid #ddd; height: 450px; overflow-y: scroll; display: flex; flex-direction: column; border-radius: 8px;">
             {% for m in msgs %}
               <div style="margin-bottom: 15px; max-width: 80%; {{ 'align-self: flex-end; text-align: right;' if m.user_id|string == my_id|string else 'align-self: flex-start;' }}">
                 <small style="color: #999; display: block;">{{ user_names.get(m.user_id|string, 'Unbekannt') }} • {{ m.timestamp.strftime('%H:%M') if m.timestamp else '' }}</small> 
-                <div style="display: inline-block; padding: 8px 12px; border-radius: 12px; margin-top: 4px; 
+                <div style="display: inline-block; padding: 10px 14px; border-radius: 15px; margin-top: 4px; 
                             {{ 'background: #0095f6; color: white;' if m.user_id|string == my_id|string else 'background: #e4e6eb; color: black;' }}">
-                    {{ m.text or '[Media/Anhang]' }}
+                    {{ m.text or '[Media]' }}
                 </div>
               </div>
             {% endfor %}
           </div>
 
           <form method="post" style="margin-top: 20px; display: flex;">
-              <input name="message" placeholder="Nachricht schreiben..." style="flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px 0 0 4px;" required>
-              <button type="submit" style="padding: 10px 20px; background: #0095f6; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer;">Senden</button>
+              <input name="message" placeholder="Nachricht tippen..." style="flex-grow: 1; padding: 12px; border: 1px solid #ccc; border-radius: 4px 0 0 4px;" required autocomplete="off">
+              <button type="submit" style="padding: 12px 25px; background: #0095f6; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer; font-weight: bold;">Senden</button>
           </form>
         </body></html>
         """, 
