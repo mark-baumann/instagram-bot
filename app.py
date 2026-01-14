@@ -156,11 +156,11 @@ def thread_view(thread_id):
             text = request.form.get("message")
             if text:
                 cl.direct_send(text, thread_ids=[thread_id])
+            # Redirect sorgt für das Neuladen der Nachrichten
             return redirect(url_for("thread_view", thread_id=thread_id))
 
         # Thread-Details & Nachrichten laden
         thread = cl.direct_thread(thread_id)
-        # Mapping: ID -> Username für die Anzeige im Chat
         user_map = {str(u.pk): u.username for u in thread.users}
         user_map[str(cl.user_id)] = "Du"
 
@@ -168,26 +168,43 @@ def thread_view(thread_id):
         msgs_sorted = sorted(msgs, key=lambda m: getattr(m, "timestamp", datetime.min))
         
         return render_template_string("""
-        <html><body style="font-family: sans-serif; max-width: 800px; margin: 40px auto;">
-          <a href="{{ url_for('threads') }}" style="text-decoration: none; color: #666;">← Zurück</a>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Chat</title>
+        </head>
+        <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; background: #f0f2f5;">
+          <a href="{{ url_for('threads') }}" style="text-decoration: none; color: #666; font-weight: bold;">← Zurück</a>
           <h3>Chat mit {{ title }}</h3>
           
-          <div style="background: #f9f9f9; padding: 15px; border: 1px solid #ddd; height: 450px; overflow-y: scroll; display: flex; flex-direction: column; border-radius: 8px;">
+          <div id="chat-window" style="background: white; padding: 15px; border: 1px solid #ddd; height: 500px; overflow-y: scroll; display: flex; flex-direction: column; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
             {% for m in msgs %}
-              <div style="margin-bottom: 15px; max-width: 80%; {{ 'align-self: flex-end; text-align: right;' if m.user_id|string == my_id|string else 'align-self: flex-start;' }}">
-                <small style="color: #999; display: block;">{{ user_names.get(m.user_id|string, 'Unbekannt') }} • {{ m.timestamp.strftime('%H:%M') if m.timestamp else '' }}</small> 
-                <div style="display: inline-block; padding: 10px 14px; border-radius: 15px; margin-top: 4px; 
-                            {{ 'background: #0095f6; color: white;' if m.user_id|string == my_id|string else 'background: #e4e6eb; color: black;' }}">
-                    {{ m.text or '[Media]' }}
+              <div style="margin-bottom: 15px; max-width: 85%; {{ 'align-self: flex-end; text-align: right;' if m.user_id|string == my_id|string else 'align-self: flex-start;' }}">
+                <small style="color: #999; display: block; margin-bottom: 2px;">
+                    {{ user_names.get(m.user_id|string, 'Unbekannt') }} • {{ m.timestamp.strftime('%H:%M') if m.timestamp else '' }}
+                </small> 
+                <div style="display: inline-block; padding: 10px 14px; border-radius: 18px; 
+                            {{ 'background: #0084ff; color: white;' if m.user_id|string == my_id|string else 'background: #e4e6eb; color: black;' }}">
+                    {{ m.text or '[Media/Anhang]' }}
                 </div>
               </div>
             {% endfor %}
           </div>
 
-          <form method="post" style="margin-top: 20px; display: flex;">
-              <input name="message" placeholder="Nachricht tippen..." style="flex-grow: 1; padding: 12px; border: 1px solid #ccc; border-radius: 4px 0 0 4px;" required autocomplete="off">
-              <button type="submit" style="padding: 12px 25px; background: #0095f6; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer; font-weight: bold;">Senden</button>
+          <form method="post" style="margin-top: 20px; display: flex; gap: 10px;">
+              <input name="message" id="msg-input" placeholder="Nachricht schreiben..." style="flex-grow: 1; padding: 12px; border: 1px solid #ccc; border-radius: 25px; outline: none;" required autocomplete="off">
+              <button type="submit" style="padding: 10px 25px; background: #0084ff; color: white; border: none; border-radius: 25px; cursor: pointer; font-weight: bold;">Senden</button>
           </form>
+
+          <script>
+            function scrollToBottom() {
+                var chatWindow = document.getElementById("chat-window");
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            }
+            // Beim Laden der Seite ausführen
+            window.onload = scrollToBottom;
+          </script>
+
         </body></html>
         """, 
         msgs=msgs_sorted, 
